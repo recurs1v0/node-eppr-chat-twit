@@ -1,0 +1,211 @@
+<!doctype html>
+<head>
+	<meta name="viewport" content= "width=device-width, user-scalable=no">
+	<title>EPPR NodeJS Chat</title>
+	<link rel="stylesheet" type="text/css" href="/css/style.css" >
+</head>
+
+<body>
+<div id="viewport">
+	
+</div>
+<div id="ads">
+	<img src="/images/eppr-link-logo.png" />
+</div>
+</body>
+
+<script src="https://code.jquery.com/jquery-3.4.1.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/moment/moment.js"></script>
+
+<script>
+
+$(function(){
+
+    // Iniciar Socket.IO
+	var socket = io.connect('/')
+	var myAddress = '';
+  // En caso de que logres romper el record actual, mostrar un mensaje.
+  socket.on('welcome', function (welcome) {
+    myAddress = welcome.ip
+    console.log(welcome)
+  });
+  socket.on('newMessage', function (msg) {
+    if(msg.data.ip != myAddress){
+        newMsgRender (msg.data.msg)
+		$("li:last-child")[0].scrollIntoView(true)
+    }
+    console.log(msg)
+  });
+
+  socket.on('showPending', function (data) {
+    if(data.ip != myAddress){
+        // newMsgRender (msg.data.msg)
+        pendingRender(data.ip)
+    }
+    console.log(data)
+  });
+  socket.on('clearPending', function (data) {
+    if(data.ip != myAddress){
+        setTimeout(function(){
+            $('#viewport .chats ul>li.pending').remove();
+			$("li:last-child")[0].scrollIntoView(true)
+        }, 1000)
+    }
+    console.log(data)
+  });
+
+
+  function sendMessage ( msg ){
+    socket.emit('submit', { msg, ip: myAddress });
+	$("li:last-child")[0].scrollIntoView(true)
+  }
+
+  function sendPending ( msg ){
+    socket.emit('pending', { msg, ip: myAddress });
+  }
+  function clearPending ( ){
+    socket.emit('clear', { ip: myAddress });
+	$("li:last-child")[0].scrollIntoView(true)
+  }
+
+	// You can add Users inside JSON users section
+	var _json = {
+		users: ["Me"],
+		chats: [{
+			from: 'EPPR Bot',
+			msg: 'Bienvenidx!',
+			time: '1589953264',
+			action: ''
+		}]
+	};
+		
+	init();
+	function init () {
+		renderData();
+	};	
+	
+	// RENDER METHODS
+	function renderData () {
+		var _now = $.now();
+		getDateTime(_now);
+		_json.users.forEach(function (user) {
+            var userID = user.replace(/ /g,"_");
+            if(userID != "Me")
+                return false;
+			var parentString = '<div class="chatbox" id="'+userID+'">'+
+				 '<div class="chats">'+
+				 '<ul></ul>'+
+				 '</div>'+
+				 '<div class="sendBox">'+
+				 '<input type="text" placeholder="Envia un mensaje al grupo ...">'+
+				 '</div>';	
+			$('#viewport').append(parentString);
+			_json.chats.forEach(function (chat) {
+				var _cl;
+				(chat.from === user) ? _cl = 'you' : _cl = 'them';
+				var dataString = '<li>'+
+					 '<div class="msg ' + _cl +'">'+
+					 '<span class="partner">'+ chat.from +'</span>'+
+					 chat.msg +
+					 '<span class="time">' + getDateTime (chat.time) + '</span>'+
+					 '</div></li>';
+				$('#viewport #'+ userID +' .chats>ul').append(dataString);		
+			});
+		});		
+	};
+	
+	function newMsgRender (data) {
+        // emit Socket.IO
+
+        if(data.from.toLowerCase() == 'me'){
+            sendMessage(data)
+        }
+
+		$('#viewport .chats ul>li.pending').remove();
+		_json.users.forEach(function (user) {
+			var checkID = user.replace(/ /g,"_");
+			var _cl = '';
+			(data.from === user) ? _cl = 'you' : _cl= 'them';					
+			$('#viewport .chatbox#'+ checkID +' .chats ul')
+				.append('<li><div class="msg '+_cl+'">'+
+						  '<span class="partner">'+ data.from +'</span>'+
+						  data.msg +
+						  '<span class="time">' + getDateTime (data.time) + '</span>'+
+						  '</div>'+
+						  '</li>');	
+		});
+	}
+	
+	function pendingRender (typingUser) {
+		var pending = '<li class="pending">'+
+			 '<div class="msg load">'+
+			 '<div class="dot"></div>'+
+			 '<div class="dot"></div>'+
+			 '<div class="dot"></div>'+
+			 '</div>'+
+			 '</li>';
+		_json.users.forEach( function (user) {
+			user = user.replace(/ /g,"_");
+			if(user !== typingUser) {
+				if(!($('#'+ user +' .chats ul>li').hasClass('pending')))
+					$('#'+ user +' .chats ul').append(pending);
+			}
+		});		
+	}
+	
+	// HELPER FUNCTION
+	function getDateTime (t) {
+		return moment().format('MMMM Do YYYY, h:mm:ss A')
+	}
+
+	// KEYPRESS EVENTS HANDLER
+    $('#viewport .sendBox>input').keyup(function( e ) {	
+    var msg = $('#Me .sendBox>input').val();
+    	if(msg.length <= 0){
+			clearPending()	
+        }
+	})
+	
+	$('#viewport .sendBox>input').keypress(function( e ) {			
+        var _id = $(this).closest('.chatbox').attr('id');
+        sendPending(_id)
+        // pendingRender(_id);
+		if(e.which == 13) {
+			var msgFrom;
+			_json.users.forEach(function (user) {
+				if(user.replace(/ /g,"_") === _id)
+					msgFrom = user;
+			});
+            var msg = $('#Me .sendBox>input').val();
+			msg = msg.replace(/\"/g,'\\"');
+			var t = $.now();
+			$('#'+_id+' .sendBox>input').val('');
+			if(msg.replace(/\s/g, '') !== ''){
+				var temp = {
+					from: msgFrom,
+					msg: msg,
+					time: t.toString(),
+					action: ''
+				}
+				_json.chats.push(temp);
+				console.log(_json);
+				newMsgRender (temp);
+			} else {
+				$('#viewport .chats ul>li.pending').remove();
+			}
+		}
+	});	
+	
+	// EVENT HANDLER
+	$('#viewport .sendBox>input').focusout(function() {
+        clearPending()
+        $('#viewport .chats ul>li.pending').remove();
+	});
+});
+</script>
+
+<script>
+
+</script>
+</html>
